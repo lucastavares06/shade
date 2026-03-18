@@ -1,7 +1,7 @@
-use windows::Win32::Foundation::GetLastError;
+use windows::Win32::Foundation::{GetLastError, HANDLE};
 use windows::Win32::System::Threading::{
-    OpenProcess, PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION,
-    PROCESS_VM_READ, PROCESS_VM_WRITE,
+    IsWow64Process, OpenProcess, PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION,
+    PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
 };
 
 use crate::core::error::UnloaderError;
@@ -26,6 +26,18 @@ pub fn open_process_full_access(process_id: u32) -> Result<SafeHandle, UnloaderE
     };
 
     Ok(SafeHandle(handle))
+}
+
+pub fn assert_process_is_x86(process: HANDLE) -> Result<(), UnloaderError> {
+    let mut is_wow64: i32 = 0;
+    unsafe { IsWow64Process(process, &mut is_wow64 as *mut i32 as *mut _) }
+        .map_err(|_| UnloaderError::UnsupportedArchitecture)?;
+
+    if is_wow64 == 0 {
+        return Err(UnloaderError::UnsupportedArchitecture);
+    }
+
+    Ok(())
 }
 
 pub fn find_kernel32(process_id: u32) -> Result<ModuleInfo, UnloaderError> {

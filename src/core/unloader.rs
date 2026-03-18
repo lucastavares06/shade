@@ -3,7 +3,7 @@ use windows::Win32::System::Memory::PAGE_EXECUTE_READWRITE;
 use super::error::UnloaderError;
 use super::memory::{alloc_remote_memory, remap_frozen_stub, snapshot_module_memory, write_remote_bytes};
 use super::pe::{patch_entry_point, resolve_remote_export, restore_entry_point};
-use super::process::{find_kernel32, find_module_info, find_process_id, is_module_loaded, open_process_full_access};
+use super::process::{assert_process_is_x86, find_kernel32, find_module_info, find_process_id, is_module_loaded, open_process_full_access};
 use super::shellcode::{build_freelibrary_shellcode, execute_remote_thread};
 
 const MAX_FREE_LIBRARY_ATTEMPTS: u32 = 50;
@@ -32,6 +32,9 @@ pub fn unload_dll(config: &UnloadConfig) -> Result<String, UnloaderError> {
 
     let process_guard = open_process_full_access(process_id)?;
     let process = process_guard.0;
+
+    assert_process_is_x86(process)?;
+    log.push_str("[+] Architecture: x86 confirmed\n");
 
     let kernel32 = find_kernel32(process_id)?;
     let free_library_address = resolve_remote_export(process, kernel32.base_address, "FreeLibrary")?;
@@ -74,8 +77,7 @@ pub fn unload_dll(config: &UnloadConfig) -> Result<String, UnloaderError> {
         }
     }
 
-    let shellcode =
-        build_freelibrary_shellcode(free_library_address as u32, target_base as u32);
+    let shellcode = build_freelibrary_shellcode(free_library_address as u32, target_base as u32);
 
     let remote_shellcode = alloc_remote_memory(process, shellcode.len(), PAGE_EXECUTE_READWRITE)?;
     write_remote_bytes(process, remote_shellcode.address as usize, &shellcode)?;

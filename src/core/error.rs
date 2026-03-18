@@ -43,4 +43,7 @@ pub enum UnloaderError {
 
     #[error("Failed to snapshot module memory")]
     SnapshotMemoryFailed,
+
+    #[error("Target process is not x86 (x64 processes are not supported)")]
+    UnsupportedArchitecture,
 }
