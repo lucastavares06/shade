@@ -12,7 +12,13 @@ use crate::core::types::{wide_slice_to_string, ModuleInfo, SafeHandle};
 pub fn find_process_id(process_name: &str) -> Result<u32, UnloaderError> {
     let snapshot_handle = unsafe {
         CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-            .map_err(|_| UnloaderError::SnapshotFailed { error_code: GetLastError().0 })?
+            .map_err(|_| {
+                let error_code = GetLastError().0;
+                if error_code == 5 {
+                    return UnloaderError::AccessDenied;
+                }
+                UnloaderError::SnapshotFailed { error_code }
+            })?
     };
     let _snapshot_guard = SafeHandle(snapshot_handle);
 
@@ -41,7 +47,13 @@ pub fn find_process_id(process_name: &str) -> Result<u32, UnloaderError> {
 pub fn find_module_info(process_id: u32, dll_name: &str) -> Result<ModuleInfo, UnloaderError> {
     let snapshot_handle = unsafe {
         CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id)
-            .map_err(|_| UnloaderError::SnapshotFailed { error_code: GetLastError().0 })?
+            .map_err(|_| {
+                let error_code = GetLastError().0;
+                if error_code == 5 {
+                    return UnloaderError::AccessDenied;
+                }
+                UnloaderError::SnapshotFailed { error_code }
+            })?
     };
     let _snapshot_guard = SafeHandle(snapshot_handle);
 

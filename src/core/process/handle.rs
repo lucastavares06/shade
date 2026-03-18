@@ -18,9 +18,13 @@ pub fn open_process_full_access(process_id: u32) -> Result<SafeHandle, UnloaderE
 
     let handle = unsafe {
         OpenProcess(desired_access, false, process_id).map_err(|_| {
+            let error_code = { GetLastError().0 };
+            if error_code == 5 {
+                return UnloaderError::AccessDenied;
+            }
             UnloaderError::OpenProcessFailed {
                 pid: process_id,
-                error_code: GetLastError().0,
+                error_code,
             }
         })?
     };

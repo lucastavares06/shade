@@ -46,4 +46,7 @@ pub enum UnloaderError {
 
     #[error("Target process is not x86 (x64 processes are not supported)")]
     UnsupportedArchitecture,
+
+    #[error("Access denied. Try running as administrator")]
+    AccessDenied,
 }
