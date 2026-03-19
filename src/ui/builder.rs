@@ -27,14 +27,14 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
     let title_font    = build_font("Segoe UI", 24, 700);
     let subtitle_font = build_font_plain("Segoe UI", 13);
     let label_font    = build_font("Segoe UI", 14, 600);
-    let input_font    = build_font_plain("Consolas", 14);
+    let input_font    = build_font_plain("Courier New", 16);
     let button_font   = build_font("Segoe UI", 14, 700);
-    let output_font   = build_font_plain("Cascadia Mono", 12);
+    let output_font   = build_font_plain("Courier New", 16);
     let status_font   = build_font_plain("Segoe UI", 11);
     let options_font  = build_font("Segoe UI", 12, 600);
 
     nwg::Window::builder()
-        .title("DLL Unloader")
+        .title("shade")
         .size((600, 620))
         .center(true)
         .flags(
@@ -53,16 +53,16 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .unwrap();
 
     nwg::Label::builder()
-        .text("DLL Unloader")
+        .text("shade / module hider")
         .font(Some(&title_font))
         .parent(&borrowed.title_frame)
         .position((20, 10))
-        .size((360, 32))
+        .size((400, 32))
         .build(&mut borrowed.title_label)
         .unwrap();
 
     nwg::Label::builder()
-        .text("Frozen stub remap  /  shellcode FreeLibrary  /  DllMain patch")
+        .text("frozen stub remap  /  shellcode FreeLibrary  /  DllMain patch")
         .font(Some(&subtitle_font))
         .parent(&borrowed.title_frame)
         .position((22, 44))
@@ -83,8 +83,8 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .font(Some(&input_font))
         .parent(&borrowed.window)
         .position((20, 114))
-        .size((560, 22))
-        .placeholder_text(Some("e.g.  gta_sa.exe"))
+        .size((560, 24))
+        .placeholder_text(Some("e.g. gta_sa.exe"))
         .build(&mut borrowed.process_input)
         .unwrap();
 
@@ -92,7 +92,7 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .text("Module / DLL")
         .font(Some(&label_font))
         .parent(&borrowed.window)
-        .position((20, 156))
+        .position((20, 152))
         .size((200, 22))
         .build(&mut borrowed.dll_label)
         .unwrap();
@@ -100,9 +100,9 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
     nwg::TextInput::builder()
         .font(Some(&input_font))
         .parent(&borrowed.window)
-        .position((20, 180))
-        .size((560, 22))
-        .placeholder_text(Some("e.g.  crashes.asi  or  mod.dll"))
+        .position((20, 176))
+        .size((560, 24))
+        .placeholder_text(Some("e.g. crashes.asi"))
         .build(&mut borrowed.dll_input)
         .unwrap();
 
@@ -110,7 +110,7 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .text("Keep frozen stub  -  prevents crashes from pending hooks")
         .font(Some(&subtitle_font))
         .parent(&borrowed.window)
-        .position((34, 236))
+        .position((34, 234))
         .size((532, 22))
         .check_state(nwg::CheckBoxState::Checked)
         .build(&mut borrowed.stub_checkbox)
@@ -120,7 +120,7 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .text("Neutralize DllMain  -  patches entry point before unload")
         .font(Some(&subtitle_font))
         .parent(&borrowed.window)
-        .position((34, 262))
+        .position((34, 260))
         .size((532, 22))
         .check_state(nwg::CheckBoxState::Checked)
         .build(&mut borrowed.patch_checkbox)
@@ -128,7 +128,7 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
 
     nwg::Frame::builder()
         .parent(&borrowed.window)
-        .position((20, 222))
+        .position((20, 220))
         .size((560, 72))
         .build(&mut borrowed.options_frame)
         .unwrap();
@@ -137,16 +137,16 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .text(" Options ")
         .font(Some(&options_font))
         .parent(&borrowed.window)
-        .position((32, 215))
+        .position((32, 213))
         .size((68, 18))
         .build(&mut borrowed.options_label)
         .unwrap();
 
     nwg::Button::builder()
-        .text("UNLOAD MODULE")
+        .text("HIDE MODULE")
         .font(Some(&button_font))
         .parent(&borrowed.window)
-        .position((20, 308))
+        .position((20, 306))
         .size((560, 40))
         .build(&mut borrowed.unload_button)
         .unwrap();
@@ -155,7 +155,7 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
         .text("Output")
         .font(Some(&label_font))
         .parent(&borrowed.window)
-        .position((20, 362))
+        .position((20, 360))
         .size((100, 20))
         .build(&mut borrowed.output_label)
         .unwrap();
@@ -163,8 +163,8 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
     nwg::TextBox::builder()
         .font(Some(&output_font))
         .parent(&borrowed.window)
-        .position((20, 384))
-        .size((560, 194))
+        .position((20, 382))
+        .size((560, 196))
         .readonly(true)
         .build(&mut borrowed.output_box)
         .unwrap();
