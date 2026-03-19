@@ -31,4 +31,4 @@ requires the msvc toolchain: `x86_64-pc-windows-msvc` or `i686-pc-windows-msvc`.
 
 ## purpose
 
-just for fun. mesing around with rust and Windows apis in a context i actually enjoy.
+just for fun. messing around with rust and win apis in a context i actually enjoy.
