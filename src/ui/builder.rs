@@ -24,23 +24,21 @@ fn build_font_plain(family: &str, size: u32) -> nwg::Font {
 pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
     let mut borrowed = app.borrow_mut();
 
-    let title_font    = build_font("Segoe UI", 24, 700);
+    let title_font = build_font("Segoe UI", 24, 700);
     let subtitle_font = build_font_plain("Segoe UI", 13);
-    let label_font    = build_font("Segoe UI", 14, 600);
-    let input_font    = build_font_plain("Courier New", 16);
-    let button_font   = build_font("Segoe UI", 14, 700);
-    let output_font   = build_font_plain("Courier New", 16);
-    let status_font   = build_font_plain("Segoe UI", 11);
-    let options_font  = build_font("Segoe UI", 12, 600);
+    let label_font = build_font("Segoe UI", 14, 600);
+    let input_font = build_font_plain("Courier New", 16);
+    let button_font = build_font("Segoe UI", 14, 700);
+    let output_font = build_font_plain("Courier New", 16);
+    let status_font = build_font_plain("Segoe UI", 11);
+    let options_font = build_font("Segoe UI", 12, 600);
 
     nwg::Window::builder()
         .title("shade")
         .size((600, 620))
         .center(true)
         .flags(
-            nwg::WindowFlags::WINDOW
-                | nwg::WindowFlags::VISIBLE
-                | nwg::WindowFlags::MINIMIZE_BOX,
+            nwg::WindowFlags::WINDOW | nwg::WindowFlags::VISIBLE | nwg::WindowFlags::MINIMIZE_BOX,
         )
         .build(&mut borrowed.window)
         .unwrap();
@@ -201,7 +199,9 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
                     let dll_name = borrowed.dll_input.text();
 
                     if process_name.trim().is_empty() || dll_name.trim().is_empty() {
-                        borrowed.output_box.set_text("[-] Please fill in both fields.\r\n");
+                        borrowed
+                            .output_box
+                            .set_text("[-] Please fill in both fields.\r\n");
                         borrowed.status_label.set_text("Error: empty fields");
                         return;
                     }
@@ -214,19 +214,26 @@ pub fn build_and_run(app: Rc<RefCell<UnloaderApp>>) {
                     borrowed.status_label.set_text("Running...");
                     borrowed.output_box.set_text("");
 
-                    let config = UnloadConfig {
-                        process_name,
-                        dll_name,
-                        patch_dllmain: should_patch,
-                        freeze_stub: should_freeze,
-                    };
+                    let mut config = UnloadConfig::new(process_name, dll_name);
+                    config.patch_dllmain = should_patch;
+                    config.freeze_stub = should_freeze;
 
                     match unload_dll(&config) {
-                        Ok(operation_log) => {
+                        Ok(unload_result) => {
                             borrowed
                                 .output_box
-                                .set_text(&operation_log.replace('\n', "\r\n"));
-                            borrowed.status_label.set_text("Operation complete");
+                                .set_text(&unload_result.log.replace('\n', "\r\n"));
+
+                            let status_text = if unload_result.module_unloaded {
+                                if unload_result.stub_remapped {
+                                    "Unloaded + stub active"
+                                } else {
+                                    "Unloaded (no stub)"
+                                }
+                            } else {
+                                "Failed to unload"
+                            };
+                            borrowed.status_label.set_text(status_text);
                         }
                         Err(unload_error) => {
                             borrowed

@@ -122,7 +122,7 @@ pub fn patch_entry_point(
     })
 }
 
-pub fn restore_entry_point(
+fn restore_entry_point(
     process: HANDLE,
     module_base: usize,
     patch: &EntryPointPatch,

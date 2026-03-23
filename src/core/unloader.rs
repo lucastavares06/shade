@@ -28,11 +28,13 @@ pub enum RetryStrategy {
         max_attempts: u32,
         delay: Duration,
     },
+    #[allow(dead_code)]
     ExponentialBackoff {
         max_attempts: u32,
         base_delay: Duration,
         max_delay: Duration,
     },
+    #[allow(dead_code)]
     UntilTimeout {
         deadline: Duration,
         delay: Duration,
