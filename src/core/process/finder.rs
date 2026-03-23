@@ -11,14 +11,13 @@ use crate::core::types::{wide_slice_to_string, ModuleInfo, SafeHandle};
 
 pub fn find_process_id(process_name: &str) -> Result<u32, UnloaderError> {
     let snapshot_handle = unsafe {
-        CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-            .map_err(|_| {
-                let error_code = GetLastError().0;
-                if error_code == 5 {
-                    return UnloaderError::AccessDenied;
-                }
-                UnloaderError::SnapshotFailed { error_code }
-            })?
+        CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).map_err(|_| {
+            let error_code = GetLastError().0;
+            if error_code == 5 {
+                return UnloaderError::AccessDenied;
+            }
+            UnloaderError::SnapshotFailed { error_code }
+        })?
     };
     let _snapshot_guard = SafeHandle(snapshot_handle);
 
@@ -29,7 +28,9 @@ pub fn find_process_id(process_name: &str) -> Result<u32, UnloaderError> {
     };
 
     if unsafe { Process32FirstW(snapshot_handle, &mut process_entry) }.is_err() {
-        return Err(UnloaderError::ProcessNotFound { name: process_name.to_string() });
+        return Err(UnloaderError::ProcessNotFound {
+            name: process_name.to_string(),
+        });
     }
 
     loop {
@@ -41,19 +42,22 @@ pub fn find_process_id(process_name: &str) -> Result<u32, UnloaderError> {
         }
     }
 
-    Err(UnloaderError::ProcessNotFound { name: process_name.to_string() })
+    Err(UnloaderError::ProcessNotFound {
+        name: process_name.to_string(),
+    })
 }
 
 pub fn find_module_info(process_id: u32, dll_name: &str) -> Result<ModuleInfo, UnloaderError> {
     let snapshot_handle = unsafe {
-        CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id)
-            .map_err(|_| {
+        CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id).map_err(
+            |_| {
                 let error_code = GetLastError().0;
                 if error_code == 5 {
                     return UnloaderError::AccessDenied;
                 }
                 UnloaderError::SnapshotFailed { error_code }
-            })?
+            },
+        )?
     };
     let _snapshot_guard = SafeHandle(snapshot_handle);
 

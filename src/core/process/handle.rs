@@ -18,7 +18,7 @@ pub fn open_process_full_access(process_id: u32) -> Result<SafeHandle, UnloaderE
 
     let handle = unsafe {
         OpenProcess(desired_access, false, process_id).map_err(|_| {
-            let error_code = { GetLastError().0 };
+            let error_code = GetLastError().0;
             if error_code == 5 {
                 return UnloaderError::AccessDenied;
             }
@@ -45,6 +45,5 @@ pub fn assert_process_is_x86(process: HANDLE) -> Result<(), UnloaderError> {
 }
 
 pub fn find_kernel32(process_id: u32) -> Result<ModuleInfo, UnloaderError> {
-    find_module_info(process_id, "kernel32.dll")
-        .map_err(|_| UnloaderError::Kernel32NotFound)
+    find_module_info(process_id, "kernel32.dll").map_err(|_| UnloaderError::Kernel32NotFound)
 }
