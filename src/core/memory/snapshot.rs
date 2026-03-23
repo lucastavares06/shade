@@ -5,6 +5,7 @@ use windows::Win32::System::Memory::{
 };
 
 use crate::core::error::UnloaderError;
+use crate::core::logger::{LogLevel, UnloadLogger};
 use crate::core::types::MemoryRegionSnapshot;
 
 use super::rw::write_remote_bytes;
@@ -13,7 +14,7 @@ pub fn snapshot_module_memory(
     process: HANDLE,
     module_base: usize,
     module_size: u32,
-    log: &mut String,
+    logger: &mut dyn UnloadLogger,
 ) -> Result<Vec<MemoryRegionSnapshot>, UnloaderError> {
     let mut snapshots: Vec<MemoryRegionSnapshot> = Vec::new();
     let mut current_address = module_base;
@@ -50,6 +51,7 @@ pub fn snapshot_module_memory(
                     total_bytes_captured += read_size;
                     snapshots.push(MemoryRegionSnapshot {
                         base_address: read_start,
+                        protection: region_info.Protect,
                         data: region_data,
                     });
                 }
@@ -59,11 +61,14 @@ pub fn snapshot_module_memory(
         current_address = region_end;
     }
 
-    log.push_str(&format!(
-        "[+] Snapshot: {} region(s), {} bytes captured\n",
-        snapshots.len(),
-        total_bytes_captured
-    ));
+    logger.log(
+        LogLevel::Success,
+        &format!(
+            "Snapshot: {} region(s), {} bytes captured",
+            snapshots.len(),
+            total_bytes_captured
+        ),
+    );
 
     if snapshots.is_empty() {
         return Err(UnloaderError::SnapshotMemoryFailed);
@@ -77,7 +82,7 @@ pub fn remap_frozen_stub(
     module_base: usize,
     module_size: u32,
     snapshots: &[MemoryRegionSnapshot],
-    log: &mut String,
+    logger: &mut dyn UnloadLogger,
 ) -> bool {
     let bulk_allocation = unsafe {
         VirtualAllocEx(
@@ -90,24 +95,48 @@ pub fn remap_frozen_stub(
     };
 
     if !bulk_allocation.is_null() {
-        log.push_str(&format!(
-            "[+] Bulk allocation at {:#x}\n",
-            bulk_allocation as usize
-        ));
-        return write_snapshots_to_allocation(
+        logger.log(
+            LogLevel::Success,
+            &format!("Bulk allocation at {:#x}", bulk_allocation as usize),
+        );
+
+        let write_success = write_snapshots_to_allocation(
             process,
             snapshots,
             module_base,
             bulk_allocation as usize,
-            log,
+            logger,
         );
+
+        if write_success {
+            restore_region_protections(
+                process,
+                snapshots,
+                module_base,
+                bulk_allocation as usize,
+                logger,
+            );
+        }
+
+        return write_success;
     }
 
-    log.push_str(&format!(
-        "[!] Bulk alloc failed (code {}) — falling back to per-region\n",
-        unsafe { GetLastError().0 }
-    ));
+    logger.log(
+        LogLevel::Warning,
+        &format!(
+            "Bulk alloc failed (code {}) — falling back to per-region",
+            unsafe { GetLastError().0 }
+        ),
+    );
 
+    per_region_remap(process, snapshots, logger)
+}
+
+fn per_region_remap(
+    process: HANDLE,
+    snapshots: &[MemoryRegionSnapshot],
+    logger: &mut dyn UnloadLogger,
+) -> bool {
     let mut regions_written: u32 = 0;
     let mut total_bytes_written: usize = 0;
     let mut regions_failed: u32 = 0;
@@ -116,97 +145,171 @@ pub fn remap_frozen_stub(
         let region_address = snapshot.base_address;
         let region_size = snapshot.data.len();
 
-        let mut region_info = MEMORY_BASIC_INFORMATION::default();
-        let query_result = unsafe {
-            VirtualQueryEx(
+        if try_write_to_committed_region(process, region_address, region_size, &snapshot.data)
+            || try_allocate_free_region(process, region_address, region_size, &snapshot.data)
+            || try_fallback_commit(process, region_address, region_size, &snapshot.data)
+        {
+            restore_single_region_protection(
                 process,
-                Some(region_address as *const std::ffi::c_void),
-                &mut region_info,
-                std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
-            )
-        };
-
-        let region_is_committed = query_result > 0 && region_info.State == MEM_COMMIT;
-        let region_is_free = query_result > 0 && region_info.State == MEM_FREE;
-
-        if region_is_committed {
-            let mut old_protection = PAGE_PROTECTION_FLAGS(0);
-            let protection_changed = unsafe {
-                VirtualProtectEx(
-                    process,
-                    region_address as *const std::ffi::c_void,
-                    region_size,
-                    PAGE_EXECUTE_READWRITE,
-                    &mut old_protection,
-                )
-                .is_ok()
-            };
-
-            if protection_changed {
-                if write_remote_bytes(process, region_address, &snapshot.data).is_ok() {
-                    regions_written += 1;
-                    total_bytes_written += region_size;
-                    continue;
-                }
-            }
-        }
-
-        if region_is_free {
-            const PAGE_SIZE: usize = 4096;
-            let aligned_base = region_address & !(PAGE_SIZE - 1);
-            let aligned_end = (region_address + region_size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-            let aligned_size = aligned_end - aligned_base;
-
-            let page_alloc = unsafe {
-                VirtualAllocEx(
-                    process,
-                    Some(aligned_base as *const std::ffi::c_void),
-                    aligned_size,
-                    MEM_COMMIT | MEM_RESERVE,
-                    PAGE_EXECUTE_READWRITE,
-                )
-            };
-
-            if !page_alloc.is_null() {
-                if write_remote_bytes(process, region_address, &snapshot.data).is_ok() {
-                    regions_written += 1;
-                    total_bytes_written += region_size;
-                    continue;
-                }
-            }
-        }
-
-        let fallback_alloc = unsafe {
-            VirtualAllocEx(
-                process,
-                Some(region_address as *const std::ffi::c_void),
+                region_address,
                 region_size,
-                MEM_COMMIT,
-                PAGE_EXECUTE_READWRITE,
-            )
-        };
-
-        if !fallback_alloc.is_null() {
-            if write_remote_bytes(process, region_address, &snapshot.data).is_ok() {
-                regions_written += 1;
-                total_bytes_written += region_size;
-                continue;
-            }
+                snapshot.protection,
+            );
+            regions_written += 1;
+            total_bytes_written += region_size;
+        } else {
+            logger.log(
+                LogLevel::Warning,
+                &format!(
+                    "Region {:#x} ({} bytes) — all strategies failed",
+                    region_address, region_size
+                ),
+            );
+            regions_failed += 1;
         }
-
-        log.push_str(&format!(
-            "    [!] Region {:#x} ({} bytes) — all strategies failed\n",
-            region_address, region_size
-        ));
-        regions_failed += 1;
     }
 
-    log.push_str(&format!(
-        "[+] Per-region: {} written ({} bytes), {} failed\n",
-        regions_written, total_bytes_written, regions_failed
-    ));
+    logger.log(
+        LogLevel::Success,
+        &format!(
+            "Per-region: {} written ({} bytes), {} failed",
+            regions_written, total_bytes_written, regions_failed
+        ),
+    );
 
     regions_written > 0
+}
+
+fn try_write_to_committed_region(
+    process: HANDLE,
+    address: usize,
+    size: usize,
+    data: &[u8],
+) -> bool {
+    let mut region_info = MEMORY_BASIC_INFORMATION::default();
+    let query_result = unsafe {
+        VirtualQueryEx(
+            process,
+            Some(address as *const std::ffi::c_void),
+            &mut region_info,
+            std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+        )
+    };
+
+    if query_result == 0 || region_info.State != MEM_COMMIT {
+        return false;
+    }
+
+    let mut old_protection = PAGE_PROTECTION_FLAGS(0);
+    let protection_changed = unsafe {
+        VirtualProtectEx(
+            process,
+            address as *const std::ffi::c_void,
+            size,
+            PAGE_EXECUTE_READWRITE,
+            &mut old_protection,
+        )
+        .is_ok()
+    };
+
+    protection_changed && write_remote_bytes(process, address, data).is_ok()
+}
+
+fn try_allocate_free_region(process: HANDLE, address: usize, size: usize, data: &[u8]) -> bool {
+    let mut region_info = MEMORY_BASIC_INFORMATION::default();
+    let query_result = unsafe {
+        VirtualQueryEx(
+            process,
+            Some(address as *const std::ffi::c_void),
+            &mut region_info,
+            std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+        )
+    };
+
+    if query_result == 0 || region_info.State != MEM_FREE {
+        return false;
+    }
+
+    const PAGE_SIZE: usize = 4096;
+    let aligned_base = address & !(PAGE_SIZE - 1);
+    let aligned_end = (address + size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+    let aligned_size = aligned_end - aligned_base;
+
+    let page_alloc = unsafe {
+        VirtualAllocEx(
+            process,
+            Some(aligned_base as *const std::ffi::c_void),
+            aligned_size,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_EXECUTE_READWRITE,
+        )
+    };
+
+    !page_alloc.is_null() && write_remote_bytes(process, address, data).is_ok()
+}
+
+fn try_fallback_commit(process: HANDLE, address: usize, size: usize, data: &[u8]) -> bool {
+    let fallback_alloc = unsafe {
+        VirtualAllocEx(
+            process,
+            Some(address as *const std::ffi::c_void),
+            size,
+            MEM_COMMIT,
+            PAGE_EXECUTE_READWRITE,
+        )
+    };
+
+    !fallback_alloc.is_null() && write_remote_bytes(process, address, data).is_ok()
+}
+
+fn restore_region_protections(
+    process: HANDLE,
+    snapshots: &[MemoryRegionSnapshot],
+    module_base: usize,
+    allocation_base: usize,
+    logger: &mut dyn UnloadLogger,
+) {
+    let mut restored_count: u32 = 0;
+
+    for snapshot in snapshots {
+        let target_address = snapshot.base_address - module_base + allocation_base;
+        if restore_single_region_protection(
+            process,
+            target_address,
+            snapshot.data.len(),
+            snapshot.protection,
+        ) {
+            restored_count += 1;
+        }
+    }
+
+    logger.log(
+        LogLevel::Info,
+        &format!("Restored protection on {} region(s)", restored_count),
+    );
+}
+
+fn restore_single_region_protection(
+    process: HANDLE,
+    address: usize,
+    size: usize,
+    protection: PAGE_PROTECTION_FLAGS,
+) -> bool {
+    if protection.0 == 0 || protection == PAGE_EXECUTE_READWRITE {
+        return true;
+    }
+
+    let mut old_protection = PAGE_PROTECTION_FLAGS(0);
+    unsafe {
+        VirtualProtectEx(
+            process,
+            address as *const std::ffi::c_void,
+            size,
+            protection,
+            &mut old_protection,
+        )
+        .is_ok()
+    }
 }
 
 fn write_snapshots_to_allocation(
@@ -214,7 +317,7 @@ fn write_snapshots_to_allocation(
     snapshots: &[MemoryRegionSnapshot],
     module_base: usize,
     allocation_base: usize,
-    log: &mut String,
+    logger: &mut dyn UnloadLogger,
 ) -> bool {
     let mut regions_written: u32 = 0;
     let mut total_bytes_written: usize = 0;
@@ -227,10 +330,13 @@ fn write_snapshots_to_allocation(
         }
     }
 
-    log.push_str(&format!(
-        "[+] Stub: {} regions, {} bytes at {:#x}\n",
-        regions_written, total_bytes_written, allocation_base
-    ));
+    logger.log(
+        LogLevel::Success,
+        &format!(
+            "Stub: {} regions, {} bytes at {:#x}",
+            regions_written, total_bytes_written, allocation_base
+        ),
+    );
 
     regions_written > 0
 }
