@@ -1,4 +1,5 @@
 pub mod error;
+pub mod logger;
 pub mod memory;
 pub mod pe;
 pub mod process;
