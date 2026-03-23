@@ -1,5 +1,5 @@
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
-use windows::Win32::System::Memory::{VirtualFreeEx, MEM_RELEASE};
+use windows::Win32::System::Memory::{VirtualFreeEx, MEM_RELEASE, PAGE_PROTECTION_FLAGS};
 
 pub struct SafeHandle(pub HANDLE);
 
@@ -37,7 +37,17 @@ pub struct ModuleInfo {
 
 pub struct MemoryRegionSnapshot {
     pub base_address: usize,
+    pub protection: PAGE_PROTECTION_FLAGS,
     pub data: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct UnloadResult {
+    pub module_unloaded: bool,
+    pub stub_remapped: bool,
+    pub entry_point_restored: bool,
+    pub freelibrary_calls: u32,
+    pub log: String,
 }
 
 pub fn wide_slice_to_string(wide: &[u16]) -> String {
