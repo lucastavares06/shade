@@ -1,21 +1,26 @@
-use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, WAIT_TIMEOUT};
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, GetExitCodeThread, WaitForSingleObject, INFINITE,
+    CreateRemoteThread, GetExitCodeThread, WaitForSingleObject,
 };
 
 use super::error::UnloaderError;
 
 pub fn build_freelibrary_shellcode(free_library_address: u32, module_handle: u32) -> Vec<u8> {
     let mut shellcode: Vec<u8> = Vec::with_capacity(16);
+
     shellcode.push(0x68);
     shellcode.extend_from_slice(&module_handle.to_le_bytes());
+
     shellcode.push(0xB8);
     shellcode.extend_from_slice(&free_library_address.to_le_bytes());
+
     shellcode.push(0xFF);
     shellcode.push(0xD0);
+
     shellcode.push(0xC2);
     shellcode.push(0x04);
     shellcode.push(0x00);
+
     shellcode
 }
 
@@ -23,6 +28,7 @@ pub fn execute_remote_thread(
     process: HANDLE,
     start_address: usize,
     parameter: usize,
+    timeout_ms: u32,
 ) -> Result<u32, UnloaderError> {
     let thread_proc: unsafe extern "system" fn(*mut std::ffi::c_void) -> u32 =
         unsafe { std::mem::transmute(start_address) };
@@ -42,7 +48,14 @@ pub fn execute_remote_thread(
         })?
     };
 
-    unsafe { WaitForSingleObject(thread_handle, INFINITE) };
+    let wait_result = unsafe { WaitForSingleObject(thread_handle, timeout_ms) };
+
+    if wait_result == WAIT_TIMEOUT {
+        unsafe {
+            let _ = CloseHandle(thread_handle);
+        }
+        return Err(UnloaderError::RemoteThreadTimeout { timeout_ms });
+    }
 
     let mut exit_code: u32 = 0;
     unsafe {
