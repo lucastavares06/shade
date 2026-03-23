@@ -17,6 +17,9 @@ pub enum UnloaderError {
     #[error("Failed to create remote thread: error code {error_code}")]
     RemoteThreadFailed { error_code: u32 },
 
+    #[error("Remote thread timed out after {timeout_ms}ms")]
+    RemoteThreadTimeout { timeout_ms: u32 },
+
     #[error("kernel32.dll not found in target process")]
     Kernel32NotFound,
 
@@ -35,8 +38,8 @@ pub enum UnloaderError {
     #[error("Failed to change memory protection: error code {error_code}")]
     VirtualProtectFailed { error_code: u32 },
 
-    #[error("Invalid PE header")]
-    InvalidPeHeader,
+    #[error("Invalid PE header: {detail}")]
+    InvalidPeHeader { detail: String },
 
     #[error("Export table not found")]
     NoExportTable,
