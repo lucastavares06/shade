@@ -15,13 +15,18 @@ pub fn resolve_remote_export(
 ) -> Result<usize, UnloaderError> {
     let dos_signature = read_remote_u16(process, module_base)?;
     if dos_signature != IMAGE_DOS_SIGNATURE {
-        return Err(UnloaderError::InvalidPeHeader);
+        return Err(UnloaderError::InvalidPeHeader {
+            detail: format!("invalid DOS signature: {:#06x}", dos_signature),
+        });
     }
 
     let pe_header_offset = read_remote_u32(process, module_base + 0x3C)? as usize;
+
     let nt_signature = read_remote_u32(process, module_base + pe_header_offset)?;
     if nt_signature != IMAGE_NT_SIGNATURE {
-        return Err(UnloaderError::InvalidPeHeader);
+        return Err(UnloaderError::InvalidPeHeader {
+            detail: format!("invalid NT signature: {:#010x}", nt_signature),
+        });
     }
 
     let optional_header_base = module_base + pe_header_offset + 0x18;
@@ -30,7 +35,11 @@ pub fn resolve_remote_export(
     let export_dir_rva_offset = match pe_magic {
         PE_MAGIC_PE32 => optional_header_base + 0x60,
         PE_MAGIC_PE32_PLUS => optional_header_base + 0x70,
-        _ => return Err(UnloaderError::InvalidPeHeader),
+        _ => {
+            return Err(UnloaderError::InvalidPeHeader {
+                detail: format!("unknown PE magic: {:#06x}", pe_magic),
+            })
+        }
     };
 
     let export_dir_rva = read_remote_u32(process, export_dir_rva_offset)? as usize;
@@ -41,7 +50,8 @@ pub fn resolve_remote_export(
     let export_directory = module_base + export_dir_rva;
     let num_named_exports = read_remote_u32(process, export_directory + 0x18)? as usize;
     let address_table = module_base + read_remote_u32(process, export_directory + 0x1C)? as usize;
-    let name_pointer_table = module_base + read_remote_u32(process, export_directory + 0x20)? as usize;
+    let name_pointer_table =
+        module_base + read_remote_u32(process, export_directory + 0x20)? as usize;
     let ordinal_table = module_base + read_remote_u32(process, export_directory + 0x24)? as usize;
 
     for name_index in 0..num_named_exports {
@@ -55,5 +65,7 @@ pub fn resolve_remote_export(
         }
     }
 
-    Err(UnloaderError::ExportNotFound { name: function_name.to_string() })
+    Err(UnloaderError::ExportNotFound {
+        name: function_name.to_string(),
+    })
 }
